@@ -59,44 +59,49 @@ RUN set -ex; \
 	chown -R www-data:root /var/www; \
 	chmod -R g=u /var/www
 
-VOLUME /var/www/html /var/www/documents /var/www/scripts
-
 # Runtime env var
-ENV DOLI_AUTO_CONFIGURE=1 \
-	DOLI_DB_TYPE=mysqli \
-	DOLI_DB_HOST= \
-	DOLI_DB_PORT=3306 \
-	DOLI_DB_USER=dolibarr \
-	DOLI_DB_PASSWORD='' \
-	DOLI_DB_NAME=dolibarr \
-	DOLI_DB_PREFIX=llx_ \
-	DOLI_DB_CHARACTER_SET=utf8 \
-	DOLI_DB_COLLATION=utf8_unicode_ci \
-	DOLI_DB_ROOT_LOGIN='' \
-	DOLI_DB_ROOT_PASSWORD='' \
-	DOLI_ADMIN_LOGIN=admin \
-	DOLI_MODULES='' \
-	DOLI_URL_ROOT='http://localhost' \
-	DOLI_AUTH=dolibarr \
-	DOLI_LDAP_HOST= \
-	DOLI_LDAP_PORT=389 \
-	DOLI_LDAP_VERSION=3 \
-	DOLI_LDAP_SERVERTYPE=openldap \
-	DOLI_LDAP_LOGIN_ATTRIBUTE=uid \
-	DOLI_LDAP_DN='' \
-	DOLI_LDAP_FILTER='' \
-	DOLI_LDAP_ADMIN_LOGIN='' \
-	DOLI_LDAP_ADMIN_PASS='' \
-	DOLI_LDAP_DEBUG=false \
-	DOLI_HTTPS=0 \
-	DOLI_PROD=0 \
-	DOLI_NO_CSRF_CHECK=0 \
-	WWW_USER_ID=33 \
-	WWW_GROUP_ID=33 \
-	PHP_INI_DATE_TIMEZONE='UTC' \
-	PHP_MEMORY_LIMIT=256M \
-	PHP_MAX_UPLOAD=20M \
-	PHP_MAX_EXECUTION_TIME=300
+ENV DOLI_AUTO_CONFIGURE 1
+
+ENV	DOLI_DB_TYPE mysqli
+ENV	DOLI_DB_HOST mysql
+ENV	DOLI_DB_PORT 3306
+ENV	DOLI_DB_USER dolibarr
+ENV	DOLI_DB_PASSWORD ''
+ENV	DOLI_DB_NAME dolibarr
+ENV	DOLI_DB_PREFIX llx_
+ENV	DOLI_DB_CHARACTER_SET utf8
+ENV	DOLI_DB_COLLATION utf8_unicode_ci
+ENV	DOLI_DB_ROOT_LOGIN ''
+ENV	DOLI_DB_ROOT_PASSWORD ''
+
+ENV	DOLI_ADMIN_LOGIN admin
+ENV	DOLI_MODULES ''
+ENV	DOLI_URL_ROOT 'http://localhost'
+ENV	DOLI_AUTH dolibarr
+
+ENV	DOLI_LDAP_HOST  127.0.0.1
+ENV	DOLI_LDAP_PORT 389 
+ENV	DOLI_LDAP_VERSION 3 
+ENV	DOLI_LDAP_SERVERTYPE openldap 
+ENV	DOLI_LDAP_LOGIN_ATTRIBUTE uid 
+ENV	DOLI_LDAP_DN '' 
+ENV	DOLI_LDAP_FILTER '' 
+ENV	DOLI_LDAP_ADMIN_LOGIN '' 
+ENV	DOLI_LDAP_ADMIN_PASS '' 
+ENV	DOLI_LDAP_DEBUG false 
+
+ENV	DOLI_HTTPS 0
+ENV	DOLI_PROD 0
+
+ENV	DOLI_NO_CSRF_CHECK 0
+
+ENV	WWW_USER_ID 33
+ENV	WWW_GROUP_ID 33
+
+ENV	PHP_INI_DATE_TIMEZONE 'UTC'
+ENV	PHP_MEMORY_LIMIT 256M
+ENV	PHP_MAX_UPLOAD 20M
+ENV	PHP_MAX_EXECUTION_TIME 300
 
 # Build time env var
 ARG DOLI_VERSION=%%VERSION%%
@@ -114,13 +119,6 @@ RUN set -ex; \
 	rm -rf /tmp/dolibarr; \
 	chmod +x /usr/src/dolibarr/scripts/*; \
 	echo "${DOLI_VERSION}" > /usr/src/dolibarr/.docker-image-version
-
-COPY entrypoint.sh /
-RUN set -ex; \
-	chmod 755 /entrypoint.sh
-
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["%%CMD%%"]
 
 # Arguments to label built container
 ARG VCS_REF
@@ -151,3 +149,16 @@ LABEL maintainer="Maxime LAPLANCHE <maxime.laplanche@outlook.com>" \
 	  org.opencontainers.image.vendor="N0xCode" \
 	  org.opencontainers.image.version=${DOLI_VERSION} \
 	  org.opencontainers.image.authors="Maxime LAPLANCHE <maxime.laplanche@outlook.com>"
+
+EXPOSE 80
+
+VOLUME /var/www/documents 
+VOLUME /var/www/scripts
+VOLUME /var/www/custom
+
+COPY entrypoint.sh /
+RUN set -ex; \
+	chmod 755 /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["%%CMD%%"]

@@ -109,7 +109,7 @@ if [ -n "$DOLI_AUTO_CONFIGURE" ] && [ ! -f /var/www/html/conf/conf.php ]; then
 EOF
 
 	chown www-data:www-data /var/www/html/conf/conf.php
-	chmod 600 /var/www/html/conf/conf.php
+	chmod 440 /var/www/html/conf/conf.php
 fi
 
 

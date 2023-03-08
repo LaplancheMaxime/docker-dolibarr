@@ -154,6 +154,7 @@ EXPOSE 80
 VOLUME /var/www/documents 
 VOLUME /var/www/scripts
 VOLUME /var/www/custom
+VOLUME /var/www/html
 
 COPY entrypoint.sh /
 RUN set -ex; \

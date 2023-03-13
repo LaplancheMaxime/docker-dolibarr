@@ -1,32 +1,52 @@
 #!/bin/sh
 set -e
 
+readonly PHP_INI_FILE="/usr/local/etc/php/php.ini"
+readonly HTML_DOC_ROOT="/var/www/html"
+readonly DOCUMENTS_DIR="/var/www/documents"
+readonly HTML_CONF_DIR="/var/www/html/conf/"
+readonly CONF_FILE="${HTML_CONF_DIR}/conf.php"
+readonly DOCKER_CONTAINER_VERSION_FILE="${DOCUMENTS_DIR}/.docker-container-version"
+readonly DOCKER_INSTALL_VERSION_FILE="${DOCUMENTS_DIR}/install.version"
+readonly WWW_USER="www-data"
+
 log() {
-    echo "[$0] [$(date +%Y-%m-%dT%H:%M:%S)] $*"
+    printf "[%s] [%s] [%s] %s\n" "$(date +'%Y-%m-%d %T')" "$$" "$0" "$*"
 }
+
+create_dir() {
+  if [ ! -d "$1" ]; then
+    log "Creating directory $1"
+    mkdir -p "$1"
+    chown $WWW_USER:$WWW_USER "$1"
+  else
+	log "$1 directory already exists"
+  fi
+}
+
 
 # version_greater A B returns whether A > B
 version_greater() {
-	[ "$(printf '%s\n' "$@" | sort -t '.' -n -k1,1 -k2,2 -k3,3 -k4,4 | head -n 1)" != "$1" ]
+    [ "$(printf '%s\n' "$@" | sort -t '.' -n -k1,1 -k2,2 -k3,3 -k4,4 | head -n 1)" != "$1" ]
 }
 
 # return true if specified directory is empty
 directory_empty() {
-	[ -z "$(ls -A "$1/")" ]
+    [ -z "$(find "$1" -maxdepth 0 -empty)" ]
 }
 
 run_as() {
 	if [ "$(id -u)" = 0 ]; then
-		su - www-data -s /bin/sh -c "$1"
+		su - $WWW_USER -s /bin/sh -c "$1"
 	else
 		sh -c "$1"
 	fi
 }
 
 
-if [ ! -f /usr/local/etc/php/php.ini ]; then
+if [ ! -f "$PHP_INI_FILE" ]; then
 	log "Initializing PHP configuration..."
-	cat <<EOF > /usr/local/etc/php/php.ini
+	cat <<EOF > "$PHP_INI_FILE"
 date.timezone = "${PHP_INI_DATE_TIMEZONE}"
 memory_limit = ${PHP_MEMORY_LIMIT}
 file_uploads = On
@@ -39,28 +59,26 @@ EOF
 fi
 
 
-if [ ! -d /var/www/documents ]; then
-	log "Initializing Dolibarr documents directory..."
-	mkdir -p /var/www/documents
-fi
+create_dir "$DOCUMENTS_DIR"
+create_dir "$HTML_CONF_DIR"
 
+# Update Dolibarr users and group
 log "Updating Dolibarr users and group..."
-usermod -u "$WWW_USER_ID" www-data
-groupmod -g "$WWW_GROUP_ID" www-data
-
-log "Updating Dolibarr folder ownership..."
-chown -R www-data:www-data /var/www
-
-
-if [ ! -d /var/www/html/conf/ ]; then
-	log "Initializing Dolibarr HTML configuration directory..."
-	mkdir -p /var/www/html/conf/
+if [ "$WWW_USER_ID" != "$(id -u $WWW_USER)" ]; then
+  run_as "usermod -u $WWW_USER_ID $WWW_USER"
 fi
+if [ "$WWW_GROUP_ID" != "$(id -g $WWW_USER)" ]; then
+  run_as "groupmod -g "$WWW_GROUP_ID" "$WWW_USER""
+fi
+
+# Update Dolibarr folder ownership
+log "Updating Dolibarr folder ownership..."
+chown -R "$WWW_USER":"$WWW_USER" "$HTML_DOC_ROOT" "$DOCUMENTS_DIR"
 
 # Create a default config if autoconfig enabled
-if [ -n "$DOLI_AUTO_CONFIGURE" ] && [ ! -f /var/www/html/conf/conf.php ]; then
+if [ -n "$DOLI_AUTO_CONFIGURE" ] && [ ! -f "$CONF_FILE" ]; then
 	log "Initializing Dolibarr HTML configuration..."
-	cat <<EOF > /var/www/html/conf/conf.php
+	cat <<EOF > "$CONF_FILE"
 <?php
 // Config file for Dolibarr ${DOLI_VERSION} ($(date +%Y-%m-%dT%H:%M:%S%:z))
 
@@ -108,23 +126,20 @@ if [ -n "$DOLI_AUTO_CONFIGURE" ] && [ ! -f /var/www/html/conf/conf.php ]; then
 \$dolibarr_mailing_limit_sendbyweb='0';
 EOF
 
-	chown www-data:www-data /var/www/html/conf/conf.php
-	chmod 440 /var/www/html/conf/conf.php
+	chown "$WWW_USER":"$WWW_USER" "$CONF_FILE"
+	chmod 440 "$CONF_FILE"
 fi
 
 
 # Detect Docker container version (ie. previous installed version)
 installed_version="0.0.0.0"
-if [ -f /var/www/documents/.docker-container-version ]; then
+if [ -f "$DOCKER_CONTAINER_VERSION_FILE" ]; then
 	# shellcheck disable=SC2016
-	installed_version="$(cat /var/www/documents/.docker-container-version)"
-fi
-if [ -f /var/www/documents/install.version ]; then
+	installed_version="$(cat "$DOCKER_CONTAINER_VERSION_FILE")"
+elif [ -f "$DOCKER_INSTALL_VERSION_FILE" ]; then
 	# shellcheck disable=SC2016
-	installed_version="$(cat /var/www/documents/install.version)"
-	mv \
-		/var/www/documents/install.version \
-		/var/www/documents/.docker-container-version
+	installed_version="$(cat "$DOCKER_INSTALL_VERSION_FILE")"
+	mv "$DOCKER_INSTALL_VERSION_FILE" "$DOCKER_CONTAINER_VERSION_FILE"
 fi
 
 # Detect Docker image version (docker specific solution)

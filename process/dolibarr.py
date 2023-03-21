@@ -45,7 +45,7 @@ def get_dolibarr_tags():
     """Get dolibarr latests tags"""
     dolibarr_tags = requests.get(
         "https://api.github.com/repos/dolibarr/dolibarr/tags",
-        verify=True
+        verify=False
     )
 
     return json.loads(dolibarr_tags.text)

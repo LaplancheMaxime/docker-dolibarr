@@ -113,7 +113,7 @@ ENV	PHP_MAX_UPLOAD 20M
 ENV	PHP_MAX_EXECUTION_TIME 300
 
 # Build time env var
-ARG DOLI_VERSION=16.0.4
+ARG DOLI_VERSION=16.0.5
 
 # Get Dolibarr
 ADD https://github.com/Dolibarr/dolibarr/archive/${DOLI_VERSION}.zip /tmp/dolibarr.zip

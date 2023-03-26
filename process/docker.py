@@ -7,5 +7,5 @@ DOCKER_REPO = 'n0xcode/docker-dolibarr'
 ARCHIS = [
     "amd64",
     "i386",
-    "arm64v8"
+    # "arm64v8"
 ]

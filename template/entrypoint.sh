@@ -9,8 +9,8 @@ readonly SCRIPTS_DIR="/var/www/scripts"
 readonly HTML_CONF_DIR="/var/www/html/conf/"
 readonly CONF_FILE="${HTML_CONF_DIR}/conf.php"
 readonly INSTALL_LOCK="${DOCUMENTS_DIR}/install.lock"
-readonly DOCKER_CONTAINER_VERSION_FILE="${DOCUMENTS_DIR}/.docker-container-version"
-readonly DOCKER_INSTALL_VERSION_FILE="${DOCUMENTS_DIR}/install.version"
+readonly DOCKER_CONTAINER_VERSION_FILE="${HTML_DOC_ROOT}/.docker-container-version"
+readonly DOCKER_INSTALL_VERSION_FILE="/tmp/lastinstall.result "
 readonly WWW_USER="www-data"
 
 log() {
@@ -29,9 +29,10 @@ create_dir() {
 
 waitForDataBase() {
   until mysql -u "${DOLI_DB_USER}" --protocol tcp -p"${DOLI_DB_PASSWORD}" -h "${DOLI_DB_HOST}" -P "${DOLI_DB_HOST_PORT}" --connect-timeout=5 -e "status" > /dev/null 2>&1; do
-    printf "Waiting for SQL database to be up...\n"
+    log "[DB] Waiting for SQL database to be up..."
     sleep 2
   done
+	log "[RUN] - Dolibarr database is up"
 }
 
 # version_greater A B returns whether A > B
@@ -52,9 +53,32 @@ run_as() {
 	fi
 }
 
+lockInstallation()
+{
+  echo '' > "$INSTALL_LOCK"
+  chown "$WWW_USER":"$WWW_USER" "$INSTALL_LOCK"
+  chmod 400 "$INSTALL_LOCK"
+}
 
-if [ ! -f "$PHP_INI_FILE" ]; then
-	log "Initializing PHP configuration..."
+init_dolibarr(){
+	create_dir "$DOCUMENTS_DIR"
+	create_dir "$HTML_CONF_DIR"
+	
+	# Update Dolibarr users and group
+	log "[INIT] - Updating Dolibarr users and group..."
+	if [ "$WWW_USER_ID" != "$(id -u $WWW_USER)" ]; then
+		run_as "usermod -u $WWW_USER_ID $WWW_USER"
+	fi
+	if [ "$WWW_GROUP_ID" != "$(id -g $WWW_USER)" ]; then
+		run_as "groupmod -g "$WWW_GROUP_ID" "$WWW_USER""
+	fi
+
+	# Update Dolibarr folder ownership
+	log "[INIT] - Updating Dolibarr folder ownership..."
+	chown -R "$WWW_USER":"$WWW_USER" "$HTML_DOC_ROOT" "$DOCUMENTS_DIR"
+
+	if [ ! -f "$PHP_INI_FILE" ]; then
+	log "[INIT] - Initializing PHP configuration..."
 	cat <<EOF > "$PHP_INI_FILE"
 date.timezone = "${PHP_INI_DATE_TIMEZONE}"
 memory_limit = ${PHP_MEMORY_LIMIT}
@@ -65,29 +89,12 @@ max_execution_time = ${PHP_MAX_EXECUTION_TIME}
 sendmail_path = /usr/sbin/sendmail -t -i
 extension = calendar.so
 EOF
-fi
-
-
-create_dir "$DOCUMENTS_DIR"
-create_dir "$HTML_CONF_DIR"
-
-# Update Dolibarr users and group
-log "Updating Dolibarr users and group..."
-if [ "$WWW_USER_ID" != "$(id -u $WWW_USER)" ]; then
-  run_as "usermod -u $WWW_USER_ID $WWW_USER"
-fi
-if [ "$WWW_GROUP_ID" != "$(id -g $WWW_USER)" ]; then
-  run_as "groupmod -g "$WWW_GROUP_ID" "$WWW_USER""
-fi
-
-# Update Dolibarr folder ownership
-log "Updating Dolibarr folder ownership..."
-chown -R "$WWW_USER":"$WWW_USER" "$HTML_DOC_ROOT" "$DOCUMENTS_DIR"
-
-# Create a default config if autoconfig enabled
-if [ -n "$DOLI_AUTO_CONFIGURE" ] && [ ! -f "$CONF_FILE" ]; then
-	log "Initializing Dolibarr HTML configuration..."
-	cat <<EOF > "$CONF_FILE"
+	fi
+ 
+	# Create a default config if autoconfig enabled
+	if [ -n "$DOLI_AUTO_CONFIGURE" ] && [ ! -f "$CONF_FILE" ]; then
+		log "[INIT] - Initializing Dolibarr configuration : $CONF_FILE"
+		cat <<EOF > "$CONF_FILE"
 <?php
 // Config file for Dolibarr ${DOLI_VERSION} ($(date +%Y-%m-%dT%H:%M:%S%:z))
 
@@ -134,64 +141,69 @@ if [ -n "$DOLI_AUTO_CONFIGURE" ] && [ ! -f "$CONF_FILE" ]; then
 \$dolibarr_main_cookie_cryptkey='$(openssl rand -hex 32)';
 \$dolibarr_mailing_limit_sendbyweb='0';
 EOF
+	fi
 
-	chown "$WWW_USER":"$WWW_USER" "$CONF_FILE"
-	chmod 440 "$CONF_FILE"
-fi
+		chown "$WWW_USER":"$WWW_USER" "$CONF_FILE"
+		chmod 440 "$CONF_FILE"
 
+	if [ "${DOLI_DB_TYPE}" = "pgsql" ] && [ ! -f "$INSTALL_LOCK" ]; then
+		log "[INIT] - chmod 600 for pgsql : $CONF_FILEs"
+    chmod 600 "$CONF_FILE"
+  else
+		log "[INIT] - chmod 400 : $CONF_FILE"
+    chmod 400 "$CONF_FILE"
+  fi
+}
 
-# Detect Docker container version (ie. previous installed version)
-installed_version="0.0.0.0"
-if [ -f "$DOCKER_CONTAINER_VERSION_FILE" ]; then
-	# shellcheck disable=SC2016
-	installed_version="$(cat "$DOCKER_CONTAINER_VERSION_FILE")"
-elif [ -f "$DOCKER_INSTALL_VERSION_FILE" ]; then
-	# shellcheck disable=SC2016
-	installed_version="$(cat "$DOCKER_INSTALL_VERSION_FILE")"
-	mv "$DOCKER_INSTALL_VERSION_FILE" "$DOCKER_CONTAINER_VERSION_FILE"
-fi
+run() {
+	log "[INIT] - Dolibarr"
+	init_dolibarr
+	log "[INIT] - Dolibarr init ok"
+	if [ -n "$DOLI_AUTO_CONFIGURE" ]; then
 
-# Detect Docker image version (docker specific solution)
-# shellcheck disable=SC2016
-image_version="${DOLI_VERSION}"
-if [ -f /usr/src/dolibarr/.docker-image-version ]; then
-	# shellcheck disable=SC2016
-	image_version="$(cat /usr/src/dolibarr/.docker-image-version)"
-fi
+		log "[RUN] - Dolibarr auto-configuration enabled"
+		waitForDataBase
 
-if version_greater "$installed_version" "$image_version"; then
-	log "Can't start Dolibarr because the version of the data ($installed_version) is higher than the docker image version ($image_version) and downgrading is not supported. Are you sure you have pulled the newest image version?"
-	exit 1
-fi
-
-waitForDataBase
-
-# Initialize image
-if version_greater "$image_version" "$installed_version"; then
-	log "Dolibarr initialization..."
-
-	if [ "$installed_version" != "0.0.0.0" ]; then
-		# Call upgrade if needed
-		# https://wiki.dolibarr.org/index.php/Installation_-_Upgrade#With_Dolibarr_.28standard_.zip_package.29
-		log "Dolibarr upgrade from $installed_version to $image_version..."
-
-		if [ -f "$INSTALL_LOCK" ]; then
-			rm "$INSTALL_LOCK"
+		if [ -f $INSTALL_LOCK ]; then 
+			mysql -u "${DOLI_DB_USER}" --protocol tcp -p"${DOLI_DB_PASSWORD}" -h "${DOLI_DB_HOST}" -P "${DOLI_DB_HOST_PORT}" --connect-timeout=5 "${DOLI_DB_NAME}" -e "SELECT Q.LAST_INSTALLED_VERSION FROM (SELECT INET_ATON(CONCAT(value, REPEAT('.0', 3 - CHAR_LENGTH(value) + CHAR_LENGTH(REPLACE(value, '.', ''))))) as VERSION_ATON, value as LAST_INSTALLED_VERSION FROM llx_const WHERE name IN ('MAIN_VERSION_LAST_INSTALL', 'MAIN_VERSION_LAST_UPGRADE') and entity=0) Q ORDER BY VERSION_ATON DESC LIMIT 1" > "$DOCKER_INSTALL_VERSION_FILE" 2>&1
+			log " result mysql : $(grep -v LAST_INSTALLED_VERSION "$DOCKER_INSTALL_VERSION_FILE")"
+		fi
+		INSTALLED_VERSION="0.0.0.0"
+		if [ -f "$DOCKER_INSTALL_VERSION_FILE" ]; then
+			INSTALLED_VERSION=$(grep -v LAST_INSTALLED_VERSION "$DOCKER_INSTALL_VERSION_FILE")
 		fi
 
-		base_version=$(printf "${installed_version}" | sed -e 's|\(.*\..*\)\..*|\1|g')
-		target_version=$(printf "${image_version}" | sed -e 's|\(.*\..*\)\..*|\1|g')
+		log "[RUN] - Last installed version: $INSTALLED_VERSION"
 
-		run_as "cd /var/www/html/install/ && php upgrade.php ${base_version}.0 ${target_version}.0"
-		run_as "cd /var/www/html/install/ && php upgrade2.php ${base_version}.0 ${target_version}.0"
-		run_as "cd /var/www/html/install/ && php step5.php ${base_version}.0 ${target_version}.0"
+		if version_greater "$INSTALLED_VERSION" "${DOLI_VERSION}"; then
+			log "[ERROR] - Can't start Dolibarr because the version of the data ($INSTALLED_VERSION) is higher than the docker image version (${DOLI_VERSION}) and downgrading is not supported. Are you sure you have pulled the newest image version?"
+			exit 1
+		elif version_greater "${DOLI_VERSION}" "$INSTALLED_VERSION"; then
+      	log "[UPGRADE] - Dolibarr upgrade initialization..."
+				if [ "$INSTALLED_VERSION" != "0.0.0.0" ]; then
+					# Call upgrade if needed
+					# https://wiki.dolibarr.org/index.php/Installation_-_Upgrade#With_Dolibarr_.28standard_.zip_package.29
+					log "[UPGRADE] - Dolibarr upgrade from $INSTALLED_VERSION to ${DOLI_VERSION}..."
 
-		log 'This is a lock file to prevent use of install pages (generated by container entrypoint)' > /var/www/documents/install.lock
-		chown "$WWW_USER":"$WWW_USER" "$INSTALL_LOCK"
-		chmod 400 "$INSTALL_LOCK"
-	elif [ -n "$DOLI_AUTO_CONFIGURE" ] && [ ! -f "$INSTALL_LOCK" ]; then
-			log "Create forced values for first Dolibarr install..."
-			cat <<EOF > /var/www/html/install/install.forced.php
+					if [ -f "$INSTALL_LOCK" ]; then
+						rm "$INSTALL_LOCK"
+					fi
+
+					base_version=$(printf "${INSTALLED_VERSION}" | sed -e 's|\(.*\..*\)\..*|\1|g')
+					target_version=$(printf "${DOLI_VERSION}" | sed -e 's|\(.*\..*\)\..*|\1|g')
+					log "[UPGRADE] - First step"
+					run_as "cd /var/www/html/install/ && php upgrade.php ${base_version}.0 ${target_version}.0"
+					log "[UPGRADE] - Second step"
+					run_as "cd /var/www/html/install/ && php upgrade2.php ${base_version}.0 ${target_version}.0"
+					log "[UPGRADE] - Third step"
+					run_as "cd /var/www/html/install/ && php step5.php ${base_version}.0 ${target_version}.0"
+
+					echo 'This is a lock file to prevent use of install pages (generated by container entrypoint)' > /var/www/documents/install.lock
+					chown "$WWW_USER":"$WWW_USER" "$INSTALL_LOCK"
+					chmod 400 "$INSTALL_LOCK"
+				elif [ -n "$DOLI_AUTO_CONFIGURE" ] && [ ! -f "$INSTALL_LOCK" ]; then
+					log "[INSTALL] - Create forced values for first Dolibarr install..."
+					cat <<EOF > /var/www/html/install/install.forced.php
 <?php
 // Forced install config file for Dolibarr ${DOLI_VERSION} ($(date +%Y-%m-%dT%H:%M:%S%:z))
 
@@ -254,24 +266,24 @@ if version_greater "$image_version" "$installed_version"; then
 
 EOF
 
-		log "You shall complete Dolibarr install manually at '${DOLI_URL_ROOT}/install'"
+				log "[INSTALL] - You shall complete Dolibarr install manually at '${DOLI_URL_ROOT}/install'"
+			fi
+			if [ ! -d "$HTDOCS_DIR" ]; then
+				log "[RUN] - Adding a symlink to "$HTDOCS_DIR"..."
+				ln -s "$HTML_DOC_ROOT" "$HTDOCS_DIR"
+			fi
+
+			if [ -f "$INSTALL_LOCK" ]; then
+				log "[RUN] - Updating Dolibarr installed version..."
+				echo "$image_version" > "$DOCKER_CONTAINER_VERSION_FILE"
+			fi
+    else
+        log "[RUN] - Schema update is not required ... Enjoy !!"
+    fi
 	fi
-fi
+}
 
-if [ ! -d "$HTDOCS_DIR" ]; then
-	log "Adding a symlink to "$HTDOCS_DIR"..."
-	ln -s "$HTML_DOC_ROOT" "$HTDOCS_DIR"
-fi
+run
 
-if [ ! -d "$SCRIPTS_DIR" ]; then
-	log "Initializing Dolibarr scripts directory "$SCRIPTS_DIR"..."
-	cp /usr/src/dolibarr/scripts "$SCRIPTS_DIR"
-fi
-
-if [ -f "$INSTALL_LOCK" ]; then
-	log "Updating Dolibarr installed version..."
-	echo "$image_version" > "$DOCKER_CONTAINER_VERSION_FILE"
-fi
-
-log "Serving Dolibarr..."
+log "[RUN] - Serving Dolibarr..."
 exec "$@"

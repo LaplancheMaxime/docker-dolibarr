@@ -6,5 +6,6 @@ DOCKER_REPO = 'n0xcode/docker-dolibarr'
 # List of architectures to build images for
 ARCHIS = [
     "amd64",
-    "i386"
+    "i386",
+    "arm64v8"
 ]

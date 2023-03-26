@@ -54,7 +54,7 @@ def get_new_content(marker,versions, docker_archis, latest_version):
         case 'SupportedArchitectures':
             lines = ""
             for archi in docker_archis:
-                lines += f"  - [`{archi}`](https://hub.docker.com/r/[{archi}]/php/)\n"
+                lines += f"  - [`{archi}`](https://hub.docker.com/r/{archi}/php/)\n"
 
             result = "\n## Quick reference\n\n"
             result += "- **Supported architectures**:"

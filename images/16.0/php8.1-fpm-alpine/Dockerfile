@@ -114,6 +114,7 @@ ENV	PHP_MAX_EXECUTION_TIME 300
 
 # Build time env var
 ARG DOLI_VERSION=16.0.5
+ENV DOLI_VERSION ${DOLI_VERSION}
 
 # Get Dolibarr
 ADD https://github.com/Dolibarr/dolibarr/archive/${DOLI_VERSION}.zip /tmp/dolibarr.zip
@@ -123,12 +124,12 @@ RUN set -ex; \
 	mkdir -p /tmp/dolibarr; \
 	unzip -q /tmp/dolibarr.zip -d /tmp/dolibarr; \
 	rm /tmp/dolibarr.zip; \
-	cp -r /tmp/dolibarr-${DOLI_VERSION}/htdocs/* /var/www/html/; \
+	cp -r /tmp/dolibarr/dolibarr-${DOLI_VERSION}/htdocs/* /var/www/html/; \
 	ln -s /var/www/html /var/www/htdocs; \
-	cp -r /tmp/dolibarr-${DOLI_VERSION}/scripts /var/www/ ; \
+	cp -r /tmp/dolibarr/dolibarr-${DOLI_VERSION}/scripts /var/www/ ; \
 	rm -rf /tmp/dolibarr; \
 	chown -R www-data:www-data /var/www; \
-	echo "${DOLI_VERSION}" > /usr/src/dolibarr/.docker-image-version
+	echo "${DOLI_VERSION}" > /var/www/html/.docker-image-version
 
 # Arguments to label built container
 ARG VCS_REF

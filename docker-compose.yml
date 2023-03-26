@@ -6,7 +6,7 @@ services:
     build: 
       context: ./images/16.0/php8.1-apache
       args:
-        ARCHI: amd64
+        ARCHI: arm64
     healthcheck:
       test: curl --silent http://localhost:80|| exit 1
       interval: 10s
